@@ -1,0 +1,38 @@
+# Reference settings for the three stages.  These are plain documentation of the
+# CLI flags - the tools take command-line arguments, not this file.
+
+stage1_tune_csrt:
+  data_root: /data/tracking      # OTB / LaSOT / GOT-10k / MOT folder, or a video file
+  output: outputs/csrt_labels
+  granularity: video             # "video" = one parameter set per clip
+                                 # "chunk" = one per chunk_size frames (richer labels)
+  chunk_size: 120
+  n_trials: 48                   # random/TPE trials per unit
+  refine_trials: 24              # local refinement around the incumbent
+  sampler: random                # or "tpe" (needs optuna)
+  max_frames: 300                # frames scored per trial - the main speed knob
+  reinit_iou: 0.1                # VOT-style reset; -1 for pure one-pass (OPE)
+  failure_penalty: 0.3           # score = mean_iou - penalty * reset_rate
+  workers: 8
+
+stage2_train_mlp:
+  labels: outputs/csrt_labels/labels.jsonl
+  yolox_ckpt: weights/yolox_m.pth
+  output: outputs/mlp
+  levels: [p3, p4, p5]           # frozen YOLOX-m FPN levels (strides 8/16/32)
+  roi_size: 3
+  input_size: 640
+  hidden: [1024, 512, 256]
+  epochs: 30
+  batch_size: 32
+  lr: 0.001
+  val_ratio: 0.2                 # split by sequence, never by frame
+  frame_stride: 2                # consecutive frames carry near-identical labels
+  cache_dir: outputs/feat_cache  # frozen features never change -> cache them
+
+stage3_eval:
+  data_root: /data/tracking
+  mlp_ckpt: outputs/mlp/best.pth
+  tuned_params: outputs/csrt_labels/params_per_unit.json
+  predict_every: 0               # 0 = predict once at init; N = refresh every N frames
+  reinit_iou: -1                 # OPE for reporting

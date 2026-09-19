@@ -1,0 +1,8 @@
+# Core
+numpy>=1.21
+opencv-contrib-python>=4.5.1   # NOT opencv-python: TrackerCSRT lives in contrib
+torch>=1.13
+torchvision>=0.11              # optional: roi_align (a grid_sample fallback is used otherwise)
+
+# Optional
+optuna>=3.0                    # --sampler tpe in tools/tune_csrt.py
