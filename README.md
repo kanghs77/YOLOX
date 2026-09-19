@@ -202,5 +202,22 @@ tools/
 * **Labels are only as good as the search.** If `summary.json` shows a small
   gap between `baseline_mean_iou` and `tuned_mean_iou`, there is little signal
   to learn — raise `--n-trials` before blaming the MLP.
+* **Match the tuning objective to your evaluation protocol.** Stage 1 scores a
+  *subsample* (`--max-frames`, `--frame-stride`) and resets from ground truth
+  (`--reinit-iou`), while stage 3 reports full one-pass IoU by default. With a
+  small trial budget the search can overfit that subsample, and the "oracle"
+  row then loses to the defaults on the same clip. If that happens, raise
+  `--max-frames`/`--n-trials`, or tune with the settings you intend to report.
 * **`number_of_scales` is forced odd** on decode, and integer parameters are
   rounded, so every prediction is directly usable by OpenCV.
+
+## Verifying an install
+
+```bash
+bash tests/smoke_test.sh /tmp/csrt_mlp_smoke
+```
+
+Builds a synthetic OTB/MOT/video dataset and runs all three stages, including
+the feature cache and the checkpoint loader. It uses *randomly initialised*
+YOLOX-m weights, so it checks that the pipeline runs — not that it is
+accurate.

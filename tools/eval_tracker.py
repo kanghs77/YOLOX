@@ -72,7 +72,8 @@ def track_with_predictor(seq, predictor, args) -> dict:
         return res
 
     # segment-wise: re-read the scene every N frames and restart with fresh params
-    ious, failures, used = [], 0, []
+    ious: List[float] = []
+    failures, used = 0, []
     for start in range(0, len(seq), args.predict_every):
         end = min(start + args.predict_every, len(seq))
         if end - start < 2:
@@ -90,11 +91,12 @@ def track_with_predictor(seq, predictor, args) -> dict:
                              frame_stride=args.frame_stride,
                              failure_penalty=args.failure_penalty)
         if res["n_eval"]:
-            ious.extend([res["mean_iou"]] * res["n_eval"])
+            ious.extend(res["ious"])
             failures += res["n_failures"]
     n = len(ious)
     mean_iou = float(np.mean(ious)) if n else 0.0
-    return {"mean_iou": mean_iou, "success_rate": float("nan"), "n_failures": failures,
+    success = float(np.mean([i > 0.5 for i in ious])) if n else 0.0
+    return {"mean_iou": mean_iou, "success_rate": success, "n_failures": failures,
             "n_eval": n, "score": mean_iou - args.failure_penalty * (failures / max(n, 1)),
             "params_used": used}
 

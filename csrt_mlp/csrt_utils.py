@@ -144,12 +144,12 @@ def track_sequence(
     Returns
     -------
     TrackResult with ``mean_iou``, ``success_rate`` (IoU > 0.5), ``n_failures``,
-    ``n_eval`` and ``score``.
+    ``n_eval``, ``score`` and the raw per-frame ``ious``.
     """
     end = len(seq) if end is None else min(end, len(seq))
     if end - start < 2:
         return TrackResult(mean_iou=0.0, success_rate=0.0, n_failures=0,
-                           n_eval=0, score=0.0, boxes=[])
+                           n_eval=0, score=0.0, ious=[], boxes=[])
 
     tracker = None
     ious: List[float] = []
@@ -202,7 +202,8 @@ def track_sequence(
     n_eval = len(ious)
     if n_eval == 0:
         return TrackResult(mean_iou=0.0, success_rate=0.0, n_failures=n_failures,
-                           n_eval=0, score=0.0, boxes=boxes if collect_boxes else [])
+                           n_eval=0, score=0.0, ious=[],
+                           boxes=boxes if collect_boxes else [])
 
     mean_iou = float(np.mean(ious))
     success = float(np.mean([i > 0.5 for i in ious]))
@@ -213,5 +214,6 @@ def track_sequence(
         n_failures=n_failures,
         n_eval=n_eval,
         score=float(score),
+        ious=ious,
         boxes=boxes if collect_boxes else [],
     )
