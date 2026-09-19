@@ -201,11 +201,18 @@ def main():
         raise SystemExit("no training records left after filtering")
 
     train_recs, val_recs = group_split(records, args.val_ratio, args.seed, args.val_seqs)
+    train_names = sorted({r["seq"] for r in train_recs})
+    val_names = sorted({r["seq"] for r in val_recs})
     print(f"labels: {len(records)} frames | train {len(train_recs)} "
-          f"({len({r['seq'] for r in train_recs})} seq) | "
-          f"val {len(val_recs)} ({len({r['seq'] for r in val_recs})} seq)")
+          f"({len(train_names)} seq) | val {len(val_recs)} ({len(val_names)} seq)")
     if not train_recs:
         raise SystemExit("training split is empty - lower --val-ratio")
+
+    # stage 3 evaluates on exactly these clips (tools/eval_tracker.py --seqs-file)
+    (out_dir / "val_sequences.txt").write_text("\n".join(val_names) + "\n")
+    (out_dir / "train_sequences.txt").write_text("\n".join(train_names) + "\n")
+    if val_names:
+        print(f"        val sequences -> {out_dir / 'val_sequences.txt'}")
 
     # --- frozen backbone ---------------------------------------------
     print(f"loading frozen {args.yolox_name} from {args.yolox_ckpt} ...")

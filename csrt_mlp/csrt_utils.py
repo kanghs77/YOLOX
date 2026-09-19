@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import warnings
 from typing import Dict, List, Optional, Tuple
 
@@ -13,6 +14,7 @@ except Exception:  # pragma: no cover
     cv2 = None
 
 __all__ = [
+    "center_error",
     "make_csrt_params",
     "create_csrt",
     "iou_xywh",
@@ -95,6 +97,15 @@ def iou_xywh(a, b) -> float:
     return float(inter / union) if union > 0 else 0.0
 
 
+def center_error(a, b) -> float:
+    """Distance between the centres of two ``(x, y, w, h)`` boxes, in pixels."""
+    ax, ay, aw, ah = (float(v) for v in a)
+    bx, by, bw, bh = (float(v) for v in b)
+    dx = (ax + aw / 2.0) - (bx + bw / 2.0)
+    dy = (ay + ah / 2.0) - (by + bh / 2.0)
+    return float(np.hypot(dx, dy))
+
+
 def _valid(box) -> bool:
     box = np.asarray(box, dtype=np.float64)
     return bool(np.all(np.isfinite(box)) and box[2] > 1 and box[3] > 1)
@@ -144,18 +155,24 @@ def track_sequence(
     Returns
     -------
     TrackResult with ``mean_iou``, ``success_rate`` (IoU > 0.5), ``n_failures``,
-    ``n_eval``, ``score`` and the raw per-frame ``ious``.
+    ``n_eval``, ``score``, the raw per-frame ``ious`` and ``center_errors``, and
+    ``fps`` measured over ``tracker.update`` alone (frame decoding excluded, so
+    the number reflects the parameters rather than the disk).
     """
     end = len(seq) if end is None else min(end, len(seq))
     if end - start < 2:
         return TrackResult(mean_iou=0.0, success_rate=0.0, n_failures=0,
-                           n_eval=0, score=0.0, ious=[], boxes=[])
+                           n_eval=0, score=0.0, ious=[], center_errors=[],
+                           fps=0.0, boxes=[])
 
     tracker = None
     ious: List[float] = []
+    errors: List[float] = []
     boxes: List[Optional[Tuple[float, float, float, float]]] = []
     n_failures = 0
     skip_until = -1
+    update_seconds = 0.0
+    n_updates = 0
 
     for idx in range(start, end, max(1, frame_stride)):
         gt = seq.gt[idx]
@@ -184,7 +201,10 @@ def track_sequence(
             boxes.append(None)
             continue
 
+        t0 = time.perf_counter()
         ok, box = tracker.update(img)
+        update_seconds += time.perf_counter() - t0
+        n_updates += 1
         box = tuple(float(v) for v in box) if box is not None else None
         boxes.append(box if ok else None)
 
@@ -193,6 +213,8 @@ def track_sequence(
 
         iou = iou_xywh(box, gt) if (ok and box is not None) else 0.0
         ious.append(iou)
+        # a lost track has no meaningful centre -> inf, which fails any threshold
+        errors.append(center_error(box, gt) if (ok and box is not None) else float("inf"))
 
         if reinit_iou is not None and iou < reinit_iou:
             n_failures += 1
@@ -202,8 +224,8 @@ def track_sequence(
     n_eval = len(ious)
     if n_eval == 0:
         return TrackResult(mean_iou=0.0, success_rate=0.0, n_failures=n_failures,
-                           n_eval=0, score=0.0, ious=[],
-                           boxes=boxes if collect_boxes else [])
+                           n_eval=0, score=0.0, ious=[], center_errors=[],
+                           fps=0.0, boxes=boxes if collect_boxes else [])
 
     mean_iou = float(np.mean(ious))
     success = float(np.mean([i > 0.5 for i in ious]))
@@ -215,5 +237,7 @@ def track_sequence(
         n_eval=n_eval,
         score=float(score),
         ious=ious,
+        center_errors=errors,
+        fps=float(n_updates / update_seconds) if update_seconds > 0 else 0.0,
         boxes=boxes if collect_boxes else [],
     )

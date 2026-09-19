@@ -167,6 +167,41 @@ def load_gt_file(path: str) -> np.ndarray:
     return np.asarray(rows, dtype=np.float64)
 
 
+def _load_absence_flags(seq_dir: Path, n: int) -> Optional[np.ndarray]:
+    """Per-frame "target not visible" flags, if the dataset ships them.
+
+    LaSOT has ``full_occlusion.txt`` / ``out_of_view.txt``, GOT-10k has
+    ``absence.label``.  Frames marked absent are blanked to NaN so the tuner
+    neither scores them nor re-initialises on them.
+    """
+    flags = np.zeros(n, dtype=bool)
+    found = False
+    for fname in ("full_occlusion.txt", "out_of_view.txt", "absence.label"):
+        path = seq_dir / fname
+        if not path.is_file():
+            continue
+        try:
+            raw = path.read_text(errors="ignore")
+            vals = [v for v in re.split(r"[,\s]+", raw.strip()) if v != ""]
+            arr = np.array([float(v) != 0 for v in vals], dtype=bool)
+        except (ValueError, OSError):
+            continue
+        if arr.size == 0:
+            continue
+        found = True
+        m = min(n, arr.size)
+        flags[:m] |= arr[:m]
+    return flags if found else None
+
+
+def _apply_absence(seq_dir: Path, gt: np.ndarray) -> np.ndarray:
+    flags = _load_absence_flags(seq_dir, len(gt))
+    if flags is not None:
+        gt = gt.copy()
+        gt[flags] = np.nan
+    return gt
+
+
 def _list_images(d: Path) -> List[str]:
     files = [str(p) for p in sorted(d.iterdir())
              if p.suffix.lower() in IMG_EXTS and p.is_file()]
@@ -198,15 +233,30 @@ def _find_gt_file(seq_dir: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 def _load_otb_sequence(seq_dir: Path, min_len: int) -> List[Sequence]:
     img_dir = _find_img_dir(seq_dir)
-    gt_file = _find_gt_file(seq_dir)
-    if img_dir is None or gt_file is None:
+    if img_dir is None:
         return []
     frames = _list_images(img_dir)
-    gt = load_gt_file(str(gt_file))
-    n = min(len(frames), len(gt))
-    if n < min_len:
+    if not frames:
         return []
-    return [Sequence(seq_dir.name, gt[:n], frame_paths=frames[:n])]
+
+    # OTB's Jogging / Skating2 annotate two targets in one folder
+    multi = sorted(seq_dir.glob("groundtruth_rect.[0-9].txt"))
+    gt_files = multi if multi else ([f] if (f := _find_gt_file(seq_dir)) else [])
+    if not gt_files:
+        return []
+
+    out: List[Sequence] = []
+    for track_id, gt_file in enumerate(gt_files):
+        try:
+            gt = load_gt_file(str(gt_file))
+        except (ValueError, OSError):
+            continue
+        n = min(len(frames), len(gt))
+        if n < min_len:
+            continue
+        out.append(Sequence(seq_dir.name, _apply_absence(seq_dir, gt[:n]),
+                            frame_paths=frames[:n], track_id=track_id))
+    return out
 
 
 def _load_mot_sequence(

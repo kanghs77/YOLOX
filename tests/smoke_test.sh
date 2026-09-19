@@ -52,14 +52,21 @@ python tools/train_mlp.py \
     --hidden 256 128 --num-workers 2 --val-ratio 0.25 \
     --cache-dir "$WORK/featcache" --weight-by-gain
 
-echo "=== stage 3: evaluate"
-python tools/eval_tracker.py \
-    --data-root "$WORK/data/otb" --mlp-ckpt "$WORK/mlp/best.pth" \
-    --tuned-params "$WORK/labels/params_per_unit.json" \
-    --frame-stride 2 --output "$WORK/eval.json"
+echo "=== dataset placement check"
+python tools/check_dataset.py --data-root "$WORK/data" --min-len 20
 
+echo "=== stage 3: compare default vs mlp vs oracle"
 python tools/eval_tracker.py \
-    --data-root "$WORK/data/otb" --seqs scene_a \
+    --data-root "$WORK/data" --mlp-ckpt "$WORK/mlp/best.pth" \
+    --tuned-params "$WORK/labels/params_per_unit.json" \
+    --frame-stride 2 --output "$WORK/eval"
+
+echo "=== stage 3b: held-out sequences only (--seqs-file) + --predict-every"
+python tools/eval_tracker.py \
+    --data-root "$WORK/data" --seqs-file "$WORK/mlp/val_sequences.txt" \
     --mlp-ckpt "$WORK/mlp/best.pth" --predict-every 40 --frame-stride 2
+
+test -s "$WORK/eval/eval.csv" || { echo "eval.csv 가 생성되지 않았습니다"; exit 1; }
+test -s "$WORK/eval/eval.md"  || { echo "eval.md 가 생성되지 않았습니다"; exit 1; }
 
 echo "=== ALL STAGES PASSED"
